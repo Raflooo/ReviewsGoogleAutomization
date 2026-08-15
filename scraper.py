@@ -71,24 +71,91 @@ def _make_hash(author: str, review_date_text: str, text: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _accept_cookies_if_present(page: Page):
+    """
+    Google suele mostrar un cartel de cookies/consentimiento la primera vez
+    que entra un navegador "nuevo" (sin cookies guardadas). Si no se cierra,
+    tapa el resto de la página y el scraper no puede leer nada. Probamos
+    varios textos posibles porque Google lo muestra distinto según el país
+    e idioma.
+    """
+    possible_texts = [
+        "Aceptar todo",
+        "Rechazar todo",
+        "Accept all",
+        "Reject all",
+        "I agree",
+        "Acepto",
+    ]
+    for text in possible_texts:
+        try:
+            button = page.get_by_role("button", name=text)
+            if button.count() > 0:
+                button.first.click(timeout=3000)
+                page.wait_for_timeout(1500)
+                return
+        except Exception:
+            continue
+
+
 def _open_reviews_tab(page: Page):
-    """Hace click en la pestaña/botón de reseñas del perfil de Google Maps."""
-    # SELECTOR: botón que dice "Reseñas" en el perfil del negocio
-    page.wait_for_selector("button[aria-label*='Reseñas'], button[aria-label*='Reviews']", timeout=15000)
-    page.click("button[aria-label*='Reseñas'], button[aria-label*='Reviews']")
-    page.wait_for_timeout(2000)
+    """
+    Hace click en la pestaña de reseñas del perfil de Google Maps.
+    Se prueban varias formas de encontrarla porque Google cambia esto
+    seguido: primero como "tab" (la forma más nueva y estable), después
+    con selectores más viejos como respaldo.
+    """
+    import re
+
+    # Intento 1: por rol de "tab" con nombre que contenga Reseñas/Reviews
+    try:
+        tab = page.get_by_role("tab", name=re.compile(r"rese|review", re.IGNORECASE))
+        if tab.count() > 0:
+            tab.first.click(timeout=8000)
+            page.wait_for_timeout(2000)
+            return
+    except Exception as e:
+        print(f"  [debug] Intento 1 (rol tab) falló: {e}")
+
+    # Intento 2: por atributo data-tab-index (así lo marca Google internamente)
+    try:
+        tab2 = page.locator("[data-tab-index='1']").first
+        tab2.click(timeout=8000)
+        page.wait_for_timeout(2000)
+        return
+    except Exception as e:
+        print(f"  [debug] Intento 2 (data-tab-index) falló: {e}")
+
+    # Intento 3: el selector viejo por aria-label (por si Google vuelve a usarlo)
+    try:
+        page.wait_for_selector(
+            "button[aria-label*='Reseñas'], button[aria-label*='Reviews']",
+            timeout=8000,
+        )
+        page.click("button[aria-label*='Reseñas'], button[aria-label*='Reviews']")
+        page.wait_for_timeout(2000)
+        return
+    except Exception as e:
+        print(f"  [debug] Intento 3 (aria-label) falló: {e}")
+
+    print("  [debug] No se pudo abrir la pestaña de reseñas con ningún método conocido.")
 
 
 def _scroll_reviews_panel(page: Page, max_scrolls: int = 15):
     """Scrollea el panel de reseñas para que Google cargue más contenido."""
-    # SELECTOR: contenedor scrolleable de reseñas
-    panel_selector = "div.m6QErb[aria-label]"
-    try:
-        panel = page.query_selector(panel_selector)
-    except Exception:
-        panel = None
+    # SELECTOR: contenedor scrolleable de reseñas (probamos varias opciones)
+    panel = None
+    for selector in ["div.m6QErb[aria-label]", "[role='feed']", "div.m6QErb"]:
+        try:
+            candidate = page.query_selector(selector)
+            if candidate:
+                panel = candidate
+                break
+        except Exception:
+            continue
 
     if not panel:
+        print("  [debug] No se encontró el panel scrolleable de reseñas.")
         return
 
     for _ in range(max_scrolls):
@@ -114,7 +181,10 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
         page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
 
+        _accept_cookies_if_present(page)
+
         _open_reviews_tab(page)
+        print("  [debug] Pestaña de reseñas abierta correctamente.")
 
         # Intento de ordenar por "Más recientes" en vez de "Más relevantes"
         try:
@@ -129,6 +199,7 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
 
         # SELECTOR: cada tarjeta individual de reseña
         review_cards = page.query_selector_all("div[data-review-id], div.jftiEf")
+        print(f"  [debug] Tarjetas de reseña encontradas en el HTML: {len(review_cards)}")
 
         for card in review_cards[:max_reviews]:
             try:
