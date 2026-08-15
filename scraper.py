@@ -101,14 +101,25 @@ def _accept_cookies_if_present(page: Page):
 def _open_reviews_tab(page: Page):
     """
     Hace click en la pestaña de reseñas del perfil de Google Maps.
-    Se prueban varias formas de encontrarla porque Google cambia esto
-    seguido: primero el rating/estrellas (que suele ser el link real a
-    las reseñas), después por rol de "tab", después selectores viejos.
+    Google usa "Opiniones" en Argentina (no "Reseñas" como en otros
+    países de habla hispana), así que probamos varias formas de
+    encontrarla por si el texto cambia según la cuenta o región.
     """
     import re
 
-    # Intento 1: el rating con estrellas (ej: "5,0 estrellas, 12 reseñas")
-    # suele ser el elemento clickeable real que abre las reseñas.
+    # Intento 1: por rol de "tab" con nombre que contenga
+    # Opiniones/Reseñas/Reviews (esta es la forma más confiable)
+    try:
+        tab = page.get_by_role("tab", name=re.compile(r"rese|opinion|review", re.IGNORECASE))
+        if tab.count() > 0:
+            tab.first.click(timeout=8000)
+            page.wait_for_timeout(2000)
+            return
+    except Exception as e:
+        print(f"  [debug] Intento 1 (rol tab) falló: {e}")
+
+    # Intento 2: el rating con estrellas (ej: "5,0 estrellas, 12 reseñas")
+    # suele ser un link alternativo a las reseñas.
     try:
         rating_link = page.locator("button[aria-label*='estrella'], button[aria-label*='star'], a[aria-label*='estrella'], a[aria-label*='star']")
         if rating_link.count() > 0:
@@ -116,11 +127,12 @@ def _open_reviews_tab(page: Page):
             page.wait_for_timeout(2000)
             return
     except Exception as e:
-        print(f"  [debug] Intento 1 (rating/estrellas) falló: {e}")
+        print(f"  [debug] Intento 2 (rating/estrellas) falló: {e}")
 
-    # Intento 2: por rol de "tab" con nombre que contenga Reseñas/Reviews
+    # Intento 2: por rol de "tab" con nombre que contenga Reseñas/Opiniones/Reviews
+    # (Google usa "Opiniones" en Argentina, no "Reseñas")
     try:
-        tab = page.get_by_role("tab", name=re.compile(r"rese|review", re.IGNORECASE))
+        tab = page.get_by_role("tab", name=re.compile(r"rese|opinion|review", re.IGNORECASE))
         if tab.count() > 0:
             tab.first.click(timeout=8000)
             page.wait_for_timeout(2000)
