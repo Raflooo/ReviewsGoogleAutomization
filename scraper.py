@@ -236,6 +236,15 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
 
         _scroll_reviews_panel(page, max_scrolls=max(5, max_reviews // 4))
 
+        # Segunda captura de diagnóstico: esta la sacamos DESPUÉS de
+        # scrollear, así vemos si las tarjetas de reseñas ya cargaron
+        # en pantalla o si el scroll no está funcionando.
+        try:
+            page.screenshot(path="debug_screenshot_2_scroll.png")
+            print("  [debug] Segunda captura (después del scroll) guardada.")
+        except Exception as e:
+            print(f"  [debug] No se pudo guardar la segunda captura: {e}")
+
         # SELECTOR: cada tarjeta individual de reseña
         review_cards = page.query_selector_all("div[data-review-id], div.jftiEf")
         print(f"  [debug] Tarjetas de reseña encontradas en el HTML: {len(review_cards)}")
