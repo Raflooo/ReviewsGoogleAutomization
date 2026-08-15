@@ -183,6 +183,16 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
 
         _accept_cookies_if_present(page)
 
+        # Captura de diagnóstico: guardamos SIEMPRE una foto de lo que el
+        # bot está viendo en este punto. Si Google está bloqueando o
+        # mostrando un captcha en vez del perfil real, esta imagen lo
+        # va a mostrar clarito.
+        try:
+            page.screenshot(path="debug_screenshot.png")
+            print("  [debug] Captura de diagnóstico guardada.")
+        except Exception as e:
+            print(f"  [debug] No se pudo guardar la captura: {e}")
+
         _open_reviews_tab(page)
         print("  [debug] Pestaña de reseñas abierta correctamente.")
 
