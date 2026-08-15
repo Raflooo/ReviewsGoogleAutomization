@@ -192,7 +192,9 @@ def main():
         try:
             process_business(business)
         except Exception as e:
+            import traceback
             print(f"  ! Error procesando {business['name']}: {e}")
+            traceback.print_exc()
             continue
 
     archive_old_reviews()
