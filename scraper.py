@@ -200,9 +200,30 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
     reviews: list[ScrapedReview] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(locale="es-AR")
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--no-sandbox",
+            ],
+        )
+        context = browser.new_context(
+            locale="es-AR",
+            viewport={"width": 1366, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            ),
+            timezone_id="America/Argentina/Buenos_Aires",
+        )
         page = context.new_page()
+
+        # Ocultamos la señal más común que usan los sitios para detectar
+        # automatización (navigator.webdriver = true delata a Playwright).
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        )
 
         page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_timeout(2000)
