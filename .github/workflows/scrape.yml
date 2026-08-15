@@ -31,10 +31,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
 
-      - name: Guardar captura de diagnóstico
+      - name: Guardar capturas de diagnóstico
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: captura-diagnostico
-          path: debug_screenshot.png
+          path: |
+            debug_screenshot.png
+            debug_screenshot_2_scroll.png
           if-no-files-found: ignore
