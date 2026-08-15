@@ -30,3 +30,11 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
+
+      - name: Guardar captura de diagnóstico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captura-diagnostico
+          path: debug_screenshot.png
+          if-no-files-found: ignore
