@@ -109,7 +109,7 @@ def _open_reviews_tab(page: Page):
 
     # Le damos un poco más de tiempo a que la barra de pestañas
     # (Descripción general / Opiniones / Acerca de) termine de cargar.
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(3000)
 
     # Intento 1: por rol de "tab" con nombre que contenga
     # Opiniones/Reseñas/Reviews (esta es la forma más confiable)
@@ -209,18 +209,21 @@ def scrape_reviews(profile_url: str, max_reviews: int = 60) -> list[ScrapedRevie
 
         _accept_cookies_if_present(page)
 
-        # Captura de diagnóstico: guardamos SIEMPRE una foto de lo que el
-        # bot está viendo en este punto. Si Google está bloqueando o
-        # mostrando un captcha en vez del perfil real, esta imagen lo
-        # va a mostrar clarito.
+        # Esperamos un poco más a que la página termine de cargar del todo
+        # (Google Maps es pesado y a veces la barra de pestañas tarda en aparecer).
+        page.wait_for_timeout(3000)
+
+        _open_reviews_tab(page)
+        print("  [debug] Intento de abrir pestaña de reseñas terminado.")
+
+        # Captura de diagnóstico: la sacamos DESPUÉS de intentar abrir las
+        # reseñas, así vemos el resultado real (si se abrieron o no),
+        # no solo un instante de la página a mitad de cargar.
         try:
             page.screenshot(path="debug_screenshot.png")
             print("  [debug] Captura de diagnóstico guardada.")
         except Exception as e:
             print(f"  [debug] No se pudo guardar la captura: {e}")
-
-        _open_reviews_tab(page)
-        print("  [debug] Pestaña de reseñas abierta correctamente.")
 
         # Intento de ordenar por "Más recientes" en vez de "Más relevantes"
         try:
