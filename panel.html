@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TapReviews</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card: rgba(255,255,255,0.72);
+    --card-solid: #ffffff;
+    --ink: #1d1d1f;
+    --ink-soft: #6e6e73;
+    --blue: #0071e3;
+    --green: #2fa84f;
+    --orange: #ff9500;
+    --red: #ff3b30;
+    --line: rgba(0,0,0,0.08);
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 28px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 0 rgba(47,168,79,0.5);
+    animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(47,168,79,0.45); }
+    70% { box-shadow: 0 0 0 8px rgba(47,168,79,0); }
+    100% { box-shadow: 0 0 0 0 rgba(47,168,79,0); }
+  }
+  .brand h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+  .brand span.sub { display:block; font-size: 12px; color: var(--ink-soft); font-weight: 400; margin-top: 1px; }
+
+  .biz-switch { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select.biz-select {
+    appearance: none;
+    background: var(--card-solid);
+    border: 1px solid var(--line);
+    border-radius: 980px;
+    padding: 9px 34px 9px 16px;
+    font-size: 14px; font-weight: 500; color: var(--ink);
+    cursor: pointer;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6"><path d="M1 1l4 4 4-4" stroke="%236e6e73" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat; background-position: right 14px center;
+  }
+  .btn {
+    border: none; border-radius: 980px; padding: 9px 18px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: transform .15s ease, opacity .15s ease;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn-primary { background: var(--blue); color: white; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-ghost { background: var(--card-solid); color: var(--ink); border: 1px solid var(--line); }
+  .btn-ghost:hover { background: #ececee; }
+
+  /* ---------- Hero metrics ---------- */
+  .hero {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 720px) { .hero { grid-template-columns: repeat(2, 1fr); } }
+  .metric {
+    background: var(--card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .metric .label { font-size: 12.5px; color: var(--ink-soft); font-weight: 500; margin-bottom: 6px; }
+  .metric .value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .metric .value small { font-size: 15px; font-weight: 500; color: var(--ink-soft); }
+  .metric .delta { font-size: 12.5px; margin-top: 4px; font-weight: 600; }
+  .delta.up { color: var(--green); }
+  .delta.down { color: var(--red); }
+  .delta.flat { color: var(--ink-soft); }
+
+  /* ---------- Section layout ---------- */
+  .columns { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .columns { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    margin-bottom: 16px;
+  }
+  .panel h2 { font-size: 17px; font-weight: 650; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .panel .panel-sub { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 16px; }
+
+  .problem-row, .task-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 13px 0; border-top: 1px solid var(--line);
+  }
+  .problem-row:first-of-type, .task-row:first-of-type { border-top: none; }
+  .badge {
+    flex-shrink: 0; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.02em; padding: 4px 9px; border-radius: 980px; margin-top: 2px;
+  }
+  .badge.alta { background: rgba(255,59,48,0.12); color: var(--red); }
+  .badge.media { background: rgba(255,149,0,0.14); color: #b06400; }
+  .badge.baja { background: rgba(110,110,115,0.12); color: var(--ink-soft); }
+  .row-body { flex: 1; min-width: 0; }
+  .row-title { font-size: 14.5px; font-weight: 600; }
+  .row-meta { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .row-solution { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; line-height: 1.4; }
+  .status-pill {
+    flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 4px 10px;
+    border-radius: 980px; background: #ececee; color: var(--ink-soft); white-space: nowrap;
+  }
+  .status-pill.pendiente { background: rgba(255,149,0,0.14); color: #b06400; }
+  .status-pill.en_progreso { background: rgba(0,113,227,0.12); color: var(--blue); }
+  .status-pill.solucionado { background: rgba(47,168,79,0.14); color: var(--green); }
+
+  .empty { padding: 28px 4px; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
+
+  /* ---------- Reviews list ---------- */
+  .review-row { padding: 13px 0; border-top: 1px solid var(--line); }
+  .review-row:first-of-type { border-top: none; }
+  .review-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .review-author { font-size: 13.5px; font-weight: 600; }
+  .review-stars { font-size: 12px; color: #b06400; white-space: nowrap; }
+  .review-text { font-size: 13px; color: var(--ink-soft); margin-top: 4px; line-height: 1.45; }
+  .review-date { font-size: 11.5px; color: #a1a1a6; margin-top: 4px; }
+  .sentiment-tag {
+    display:inline-block; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 980px; margin-right: 6px;
+  }
+  .sentiment-tag.positivo { background: rgba(47,168,79,0.14); color: var(--green); }
+  .sentiment-tag.negativo { background: rgba(255,59,48,0.12); color: var(--red); }
+  .sentiment-tag.neutral { background: rgba(110,110,115,0.12); color: var(--ink-soft); }
+
+  /* ---------- Setup screen ---------- */
+  .setup {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .setup-card {
+    background: var(--card-solid); border: 1px solid var(--line);
+    border-radius: 22px; padding: 36px; max-width: 420px; width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+  }
+  .setup-card h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .setup-card p { font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 22px; }
+  .field { margin-bottom: 14px; }
+  .field label { display:block; font-size: 12.5px; font-weight: 600; margin-bottom: 6px; }
+  .field input {
+    width: 100%; padding: 11px 13px; border-radius: 12px;
+    border: 1px solid var(--line); font-size: 14px; font-family: inherit;
+    background: #fafafa;
+  }
+  .field input:focus { outline: 2px solid var(--blue); outline-offset: 1px; background: white; }
+  .setup-error { font-size: 12.5px; color: var(--red); margin-top: 10px; min-height: 16px; }
+
+  /* ---------- Modal (agregar negocio) ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 50; padding: 20px;
+  }
+  .modal {
+    background: var(--card-solid); border-radius: 20px; padding: 28px;
+    max-width: 400px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  }
+  .modal h3 { font-size: 18px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .modal p.hint { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 18px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+  .loading { padding: 60px 0; text-align: center; color: var(--ink-soft); font-size: 13.5px; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: white; padding: 12px 20px; border-radius: 980px;
+    font-size: 13.5px; font-weight: 500; box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    z-index: 60; opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const { createClient } = supabase;
+
+const STORAGE_KEY = 'supabase-config';
+let sb = null;
+let state = {
+  config: null,
+  businesses: [],
+  currentBusinessId: null,
+  reviews: [],
+  problems: [],
+  tasks: [],
+  loading: true,
+  showAddModal: false,
+  toastMsg: '',
+};
+
+function render() {
+  const root = document.getElementById('root');
+  if (!state.config) {
+    root.innerHTML = renderSetup();
+    attachSetupHandlers();
+    return;
+  }
+  root.innerHTML = renderDashboard();
+  attachDashboardHandlers();
+}
+
+// ---------- Setup screen ----------
+function renderSetup(errorMsg) {
+  return `
+    <div class="setup">
+      <div class="setup-card">
+        <h1>Conectar TapReviews</h1>
+        <p>Pegá los datos de tu proyecto de Supabase. Los encontrás en <b>Project Settings → API</b>. Usá la clave <b>publishable</b> (la que empieza con <code>sb_publishable_</code>), nunca la secret key acá.</p>
+        <div class="field">
+          <label>Project URL</label>
+          <input id="input-url" type="text" placeholder="https://tuproyecto.supabase.co" />
+        </div>
+        <div class="field">
+          <label>Publishable key</label>
+          <input id="input-key" type="text" placeholder="sb_publishable_..." />
+        </div>
+        <button class="btn btn-primary" id="btn-connect" style="width:100%; padding:12px;">Conectar</button>
+        <div class="setup-error">${errorMsg || ''}</div>
+      </div>
+    </div>
+  `;
+}
+
+function attachSetupHandlers() {
+  document.getElementById('btn-connect').addEventListener('click', async () => {
+    const url = document.getElementById('input-url').value.trim();
+    const key = document.getElementById('input-key').value.trim();
+    if (!url || !key) {
+      document.querySelector('.setup-error').textContent = 'Completá los dos campos.';
+      return;
+    }
+    try {
+      const testClient = createClient(url, key);
+      const { error } = await testClient.from('businesses').select('id').limit(1);
+      if (error) throw error;
+      state.config = { url, key };
+      sb = testClient;
+      await window.storage.set('supabase-config', JSON.stringify(state.config));
+      await loadAll();
+    } catch (e) {
+      document.querySelector('.setup-error').textContent = 'No se pudo conectar. Revisá la URL y la clave.';
+    }
+  });
+}
+
+// ---------- Dashboard ----------
+function renderDashboard() {
+  if (state.loading) {
+    return `<div class="wrap"><div class="loading">Cargando...</div></div>`;
+  }
+
+  const biz = state.businesses.find(b => b.id === state.currentBusinessId);
+
+  if (!biz) {
+    return `
+      <div class="wrap">
+        ${renderTopbar()}
+        <div class="panel">
+          <div class="empty">
+            Todavía no cargaste ningún negocio.<br/>
+            <button class="btn btn-primary" id="btn-add-empty" style="margin-top:14px;">Agregar tu primer negocio</button>
+          </div>
+        </div>
+      </div>
+      ${state.showAddModal ? renderAddModal() : ''}
+      ${renderToast()}
+    `;
+  }
+
+  const reviews = state.reviews;
+  const totalReviews = reviews.length;
+  const avgRating = totalReviews
+    ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / totalReviews).toFixed(1)
+    : '—';
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const newThisWeek = reviews.filter(r => r.scraped_at && new Date(r.scraped_at) >= weekAgo).length;
+  const negRate = totalReviews
+    ? Math.round((reviews.filter(r => r.sentiment === 'negativo').length / totalReviews) * 100)
+    : 0;
+  const openProblems = state.problems.filter(p => p.status !== 'archivado' && p.status !== 'solucionado');
+
+  return `
+    <div class="wrap">
+      ${renderTopbar()}
+
+      <div class="hero">
+        <div class="metric">
+          <div class="label">Puntuación promedio</div>
+          <div class="value">${avgRating}<small> / 5</small></div>
+        </div>
+        <div class="metric">
+          <div class="label">Reseñas totales</div>
+          <div class="value">${totalReviews}</div>
+        </div>
+        <div class="metric">
+          <div class="label">Nuevas (7 días)</div>
+          <div class="value">${newThisWeek}</div>
+          <div class="delta ${newThisWeek > 0 ? 'up' : 'flat'}">${newThisWeek > 0 ? '+' + newThisWeek + ' esta semana' : 'sin novedades'}</div>
+        </div>
+        <div class="metric">
+          <div class="label">Problemas abiertos</div>
+          <div class="value">${openProblems.length}</div>
+          <div class="delta ${negRate > 20 ? 'down' : 'flat'}">${negRate}% reseñas negativas</div>
+        </div>
+      </div>
+
+      <div class="columns">
+        <div>
+          <div class="panel">
+            <h2>Problemas detectados</h2>
+            <div class="panel-sub">Agrupados automáticamente por la IA a partir de las reseñas</div>
+            ${openProblems.length === 0
+              ? `<div class="empty">Sin problemas abiertos por ahora 🎉</div>`
+              : openProblems
+                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
+                  .map(p => `
+                    <div class="problem-row">
+                      <span class="badge ${p.priority}">${p.priority}</span>
+                      <div class="row-body">
+                        <div class="row-title">${escapeHtml(p.label)}</div>
+                        <div class="row-meta">${p.affected_reviews_count} cliente${p.affected_reviews_count === 1 ? '' : 's'} afectado${p.affected_reviews_count === 1 ? '' : 's'} · ${p.category}</div>
+                      </div>
+                    </div>
+                  `).join('')}
+          </div>
+
+          <div class="panel">
+            <h2>Tareas</h2>
+            <div class="panel-sub">Generadas a partir de los problemas detectados</div>
+            ${state.tasks.length === 0
+              ? `<div class="empty">Todavía no hay tareas generadas.</div>`
+              : state.tasks
+                  .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
+                  .map(t => `
+                    <div class="task-row">
+                      <span class="badge ${t.priority}">${t.priority}</span>
+                      <div class="row-body">
+                        <div class="row-title">${escapeHtml(t.title || '')}</div>
+                        ${t.suggested_solution ? `<div class="row-solution">💡 ${escapeHtml(t.suggested_solution)}</div>` : ''}
+                      </div>
+                      <span class="status-pill ${t.status}">${statusLabel(t.status)}</span>
+                    </div>
+                  `).join('')}
+          </div>
+        </div>
+
+        <div>
+          <div class="panel">
+            <h2>Últimas reseñas</h2>
+            <div class="panel-sub">${totalReviews} en total</div>
+            ${reviews.length === 0
+              ? `<div class="empty">Todavía no se detectaron reseñas.</div>`
+              : reviews
+                  .sort((a, b) => new Date(b.review_date || 0) - new Date(a.review_date || 0))
+                  .slice(0, 12)
+                  .map(r => `
+                    <div class="review-row">
+                      <div class="review-top">
+                        <span class="review-author">${escapeHtml(r.author || 'Anónimo')}</span>
+                        <span class="review-stars">${'★'.repeat(r.rating || 0)}${'☆'.repeat(5 - (r.rating || 0))}</span>
+                      </div>
+                      ${r.sentiment ? `<span class="sentiment-tag ${r.sentiment}">${r.sentiment}</span>` : ''}
+                      <div class="review-text">${escapeHtml((r.review_text || '').slice(0, 160))}${(r.review_text || '').length > 160 ? '…' : ''}</div>
+                      <div class="review-date">${formatDate(r.review_date)}</div>
+                    </div>
+                  `).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    ${state.showAddModal ? renderAddModal() : ''}
+    ${renderToast()}
+  `;
+}
+
+function renderTopbar() {
+  return `
+    <div class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <div>
+          <h1>TapReviews</h1>
+          <span class="sub">Actualizado automáticamente cada hora</span>
+        </div>
+      </div>
+      <div class="biz-switch">
+        ${state.businesses.length > 0 ? `
+          <select class="biz-select" id="biz-select">
+            ${state.businesses.map(b => `<option value="${b.id}" ${b.id === state.currentBusinessId ? 'selected' : ''}>${escapeHtml(b.name)}</option>`).join('')}
+          </select>
+        ` : ''}
+        <button class="btn btn-ghost" id="btn-refresh">Actualizar</button>
+        <button class="btn btn-primary" id="btn-add">+ Agregar negocio</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAddModal() {
+  return `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>Agregar negocio</h3>
+        <p class="hint">Pegá el link del perfil de Google Maps. El bot va a empezar a leerlo en la próxima corrida automática (cada 1 hora).</p>
+        <div class="field">
+          <label>Nombre del negocio</label>
+          <input id="new-biz-name" type="text" placeholder="Ej: Café Martínez Palermo" />
+        </div>
+        <div class="field">
+          <label>Link de Google Maps</label>
+          <input id="new-biz-url" type="text" placeholder="https://maps.app.goo.gl/..." />
+        </div>
+        <div class="setup-error" id="modal-error"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="btn-cancel-add">Cancelar</button>
+          <button class="btn btn-primary" id="btn-save-add">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderToast() {
+  return `<div class="toast ${state.toastMsg ? 'show' : ''}">${state.toastMsg}</div>`;
+}
+
+function attachDashboardHandlers() {
+  const bizSelect = document.getElementById('biz-select');
+  if (bizSelect) {
+    bizSelect.addEventListener('change', async (e) => {
+      state.currentBusinessId = e.target.value;
+      state.loading = true;
+      render();
+      await loadBusinessData();
+    });
+  }
+
+  const refreshBtn = document.getElementById('btn-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    state.loading = true;
+    render();
+    await loadAll(true);
+  });
+
+  const addBtn = document.getElementById('btn-add') || document.getElementById('btn-add-empty');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    state.showAddModal = true;
+    render();
+  });
+
+  const backdrop = document.getElementById('modal-backdrop');
+  if (backdrop) {
+    backdrop.addEventListener('click', (e) => {
+      if (e.target.id === 'modal-backdrop') {
+        state.showAddModal = false;
+        render();
+      }
+    });
+  }
+
+  const cancelBtn = document.getElementById('btn-cancel-add');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => {
+    state.showAddModal = false;
+    render();
+  });
+
+  const saveBtn = document.getElementById('btn-save-add');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const name = document.getElementById('new-biz-name').value.trim();
+    const url = document.getElementById('new-biz-url').value.trim();
+    if (!name || !url) {
+      document.getElementById('modal-error').textContent = 'Completá los dos campos.';
+      return;
+    }
+    try {
+      const { data, error } = await sb.from('businesses').insert({
+        name, profile_url: url, source: 'google_maps'
+      }).select();
+      if (error) throw error;
+      state.showAddModal = false;
+      showToast('Negocio agregado. El bot lo va a leer en la próxima corrida.');
+      await loadAll(true);
+      if (data && data[0]) {
+        state.currentBusinessId = data[0].id;
+        await loadBusinessData();
+      }
+    } catch (e) {
+      document.getElementById('modal-error').textContent = 'No se pudo guardar. Revisá el link e intentá de nuevo.';
+    }
+  });
+}
+
+function showToast(msg) {
+  state.toastMsg = msg;
+  render();
+  setTimeout(() => { state.toastMsg = ''; render(); }, 3200);
+}
+
+// ---------- Data loading ----------
+async function loadAll(silent) {
+  const { data: businesses, error } = await sb.from('businesses').select('*').order('created_at', { ascending: true });
+  if (!error) state.businesses = businesses || [];
+  if (!state.currentBusinessId && state.businesses.length > 0) {
+    state.currentBusinessId = state.businesses[0].id;
+  }
+  await loadBusinessData();
+}
+
+async function loadBusinessData() {
+  state.loading = true;
+  if (!state.currentBusinessId) {
+    state.reviews = []; state.problems = []; state.tasks = [];
+    state.loading = false;
+    render();
+    return;
+  }
+  const [{ data: reviews }, { data: problems }, { data: tasks }] = await Promise.all([
+    sb.from('reviews').select('*').eq('business_id', state.currentBusinessId),
+    sb.from('problems').select('*').eq('business_id', state.currentBusinessId),
+    sb.from('tasks').select('*').eq('business_id', state.currentBusinessId),
+  ]);
+  state.reviews = reviews || [];
+  state.problems = problems || [];
+  state.tasks = tasks || [];
+  state.loading = false;
+  render();
+}
+
+// ---------- Helpers ----------
+function priorityRank(p) { return p === 'alta' ? 0 : p === 'media' ? 1 : 2; }
+function statusLabel(s) {
+  return { pendiente: 'Pendiente', en_progreso: 'En progreso', solucionado: 'Solucionado', archivado: 'Archivado' }[s] || s;
+}
+function formatDate(d) {
+  if (!d) return '';
+  try {
+    return new Date(d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return d; }
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ---------- Boot ----------
+async function boot() {
+  try {
+    const stored = await window.storage.get(STORAGE_KEY);
+    if (stored && stored.value) {
+      const cfg = JSON.parse(stored.value);
+      state.config = cfg;
+      sb = createClient(cfg.url, cfg.key);
+      render();
+      await loadAll();
+      return;
+    }
+  } catch (e) {
+    // no hay config guardada todavía
+  }
+  render();
+}
+
+boot();
+</script>
+</body>
+</html>
