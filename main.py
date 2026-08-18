@@ -1,205 +1,67 @@
-"""
-main.py
--------
-Orquestador principal. Este es el script que corre el cron job
-(GitHub Actions) cada X horas.
+-- ============================================================
+-- Disparo automático: cuando se agrega un negocio nuevo, la base
+-- de datos le avisa a GitHub que lo lea YA, sin esperar la próxima
+-- corrida programada (hasta 1 hora).
+--
+-- ANTES DE CORRER ESTO: necesitás un "Personal Access Token" de
+-- GitHub con permiso de "Actions: Read and write" sobre el repo
+-- ReviewsGoogleAutomization. Ver instrucciones en el chat.
+-- ============================================================
 
-Para cada negocio guardado en la base:
-  1. Scrapea las reseñas actuales del perfil.
-  2. Compara contra lo que ya teníamos guardado -> detecta reseñas NUEVAS.
-  3. Para cada reseña nueva: la analiza con IA, la agrupa a un problema
-     existente o crea uno nuevo, y genera/actualiza una tarea.
-  4. Archiva reseñas y tareas de más de 1 año sin actividad.
-"""
+-- 1. Activamos la extensión que permite a Postgres hacer pedidos
+--    HTTP hacia afuera (para poder "avisarle" a GitHub).
+create extension if not exists pg_net with schema extensions;
 
-import os
-from datetime import date, timedelta
+-- 2. Guardamos tu token de GitHub de forma encriptada. Reemplazá
+--    'PEGAR_TU_TOKEN_DE_GITHUB_ACA' por el token real ANTES de
+--    correr esto. Esto solo se corre UNA VEZ.
+select vault.create_secret(
+  'PEGAR_TU_TOKEN_DE_GITHUB_ACA',
+  'github_pat',
+  'Token para disparar el workflow de GitHub Actions'
+);
 
-from dotenv import load_dotenv
-from supabase import create_client
+-- 3. Función que llama a la API de GitHub para "despertar" al bot.
+create or replace function public.trigger_scrape_workflow()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  gh_token text;
+begin
+  select decrypted_secret into gh_token
+  from vault.decrypted_secrets
+  where name = 'github_pat'
+  limit 1;
 
-from scraper import scrape_reviews
-from analyzer import analyze_review, find_matching_problem
+  perform net.http_post(
+    url := 'https://api.github.com/repos/Raflooo/ReviewsGoogleAutomization/actions/workflows/scrape.yml/dispatches',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || gh_token,
+      'Accept', 'application/vnd.github+json',
+      'Content-Type', 'application/json'
+    ),
+    body := jsonb_build_object('ref', 'main')
+  );
 
-load_dotenv()
+  return new;
+end;
+$$;
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+-- 4. El "gatillo": cada vez que se inserta una fila nueva en
+--    "businesses", se ejecuta la función de arriba automáticamente.
+drop trigger if exists on_business_added on businesses;
+create trigger on_business_added
+  after insert on businesses
+  for each row
+  execute function trigger_scrape_workflow();
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-def get_businesses():
-    response = supabase.table("businesses").select("*").execute()
-    return response.data
-
-
-def get_existing_review_hashes(business_id: str) -> set[str]:
-    response = (
-        supabase.table("reviews")
-        .select("external_review_hash")
-        .eq("business_id", business_id)
-        .execute()
-    )
-    return {row["external_review_hash"] for row in response.data}
-
-
-def get_open_problems(business_id: str) -> list[dict]:
-    response = (
-        supabase.table("problems")
-        .select("*")
-        .eq("business_id", business_id)
-        .neq("status", "archivado")
-        .execute()
-    )
-    return response.data
-
-
-def process_business(business: dict):
-    business_id = business["id"]
-    print(f"\n== Procesando: {business['name']} ==")
-
-    scraped = scrape_reviews(business["profile_url"])
-    print(f"  Reseñas encontradas en el perfil: {len(scraped)}")
-
-    existing_hashes = get_existing_review_hashes(business_id)
-    new_reviews = [r for r in scraped if r.review_hash not in existing_hashes]
-    print(f"  Reseñas NUEVAS detectadas: {len(new_reviews)}")
-
-    if not new_reviews:
-        supabase.table("businesses").update(
-            {"last_checked_at": "now()"}
-        ).eq("id", business_id).execute()
-        return
-
-    open_problems = get_open_problems(business_id)
-
-    for review in new_reviews:
-        # 1. Guardar la reseña
-        review_row = (
-            supabase.table("reviews")
-            .insert(
-                {
-                    "business_id": business_id,
-                    "external_review_hash": review.review_hash,
-                    "author": review.author,
-                    "rating": review.rating,
-                    "review_text": review.text,
-                    "review_date": review.review_date.isoformat() if review.review_date else None,
-                }
-            )
-            .execute()
-            .data[0]
-        )
-
-        # 2. Analizar con IA
-        analysis = analyze_review(review.text, review.rating)
-
-        supabase.table("reviews").update({"sentiment": analysis["sentiment"]}).eq(
-            "id", review_row["id"]
-        ).execute()
-
-        if not analysis.get("has_problem"):
-            continue
-
-        # 3. Agrupar con un problema existente, o crear uno nuevo
-        match = find_matching_problem(
-            open_problems, analysis["problem_category"], analysis["problem_label"]
-        )
-
-        if match:
-            supabase.table("problems").update(
-                {
-                    "affected_reviews_count": match["affected_reviews_count"] + 1,
-                    "last_seen_at": "now()",
-                }
-            ).eq("id", match["id"]).execute()
-            problem_id = match["id"]
-        else:
-            new_problem = (
-                supabase.table("problems")
-                .insert(
-                    {
-                        "business_id": business_id,
-                        "category": analysis["problem_category"],
-                        "label": analysis["problem_label"],
-                        "affected_reviews_count": 1,
-                        "priority": analysis["severity"],
-                    }
-                )
-                .execute()
-                .data[0]
-            )
-            problem_id = new_problem["id"]
-            open_problems.append(new_problem)  # para que agrupe con esta en el mismo run
-
-        supabase.table("review_problems").insert(
-            {"review_id": review_row["id"], "problem_id": problem_id}
-        ).execute()
-
-        # 4. Crear (o actualizar) la tarea asociada
-        existing_task = (
-            supabase.table("tasks")
-            .select("*")
-            .eq("problem_id", problem_id)
-            .neq("status", "solucionado")
-            .execute()
-            .data
-        )
-
-        if not existing_task:
-            supabase.table("tasks").insert(
-                {
-                    "business_id": business_id,
-                    "problem_id": problem_id,
-                    "title": analysis["task_title"],
-                    "priority": analysis["severity"],
-                    "suggested_solution": analysis["suggested_solution"],
-                }
-            ).execute()
-
-    supabase.table("businesses").update({"last_checked_at": "now()"}).eq(
-        "id", business_id
-    ).execute()
-
-
-def archive_old_reviews():
-    """Archiva reseñas de más de 1 año y las tareas asociadas."""
-    one_year_ago = (date.today() - timedelta(days=365)).isoformat()
-
-    old_reviews = (
-        supabase.table("reviews")
-        .select("id")
-        .lt("review_date", one_year_ago)
-        .eq("is_archived", False)
-        .execute()
-        .data
-    )
-
-    if not old_reviews:
-        return
-
-    ids = [r["id"] for r in old_reviews]
-    supabase.table("reviews").update({"is_archived": True}).in_("id", ids).execute()
-    print(f"\nSe archivaron {len(ids)} reseñas de más de 1 año.")
-
-
-def main():
-    businesses = get_businesses()
-    print(f"Negocios a procesar: {len(businesses)}")
-
-    for business in businesses:
-        try:
-            process_business(business)
-        except Exception as e:
-            import traceback
-            print(f"  ! Error procesando {business['name']}: {e}")
-            traceback.print_exc()
-            continue
-
-    archive_old_reviews()
-    print("\nListo.")
-
-
-if __name__ == "__main__":
-    main()
+-- ============================================================
+-- Listo. De acá en más, cada vez que un cliente agregue un negocio
+-- desde el panel, GitHub va a arrancar a leerlo en segundos (no en
+-- hasta 1 hora). El token queda guardado encriptado adentro de
+-- Supabase — nunca se expone en el panel.html ni es visible para
+-- los clientes.
+-- ============================================================
